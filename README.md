@@ -1,122 +1,50 @@
-# MC Assistant
+# MC Assistant (Base Project)
 
-Baseline scaffold for a Minecraft-focused assistant with explicit boundaries for game integration, reasoning, and interaction channels.
+A Python-first Minecraft assistant scaffold designed to:
 
-## Python Version Target
+- run minecraft commands in the background (via a game adapter such as `minescript`),
+- keep command history and return results on request,
+- parse SeedCrackerX output and explain seed-cracking progress,
+- answer nearest structure/biome queries when a locator backend is configured,
+- expose a CLI foundation that can later be connected to voice controls.
 
-- **Python 3.11+** (`requires-python = ">=3.11"` in `pyproject.toml`).
+## Current status
 
-## Dependency Groups
+This is a **base project scaffold** with pluggable backends.
 
-Dependencies are grouped as optional extras in `pyproject.toml`:
+Implemented now:
 
-- **Core (`core`)**: minescript adapter dependencies.
-- **Voice (`voice`)**: speech-to-text and text-to-speech stack.
-- **Async/runtime (`async_runtime`)**: task scheduling and queue helpers.
-- **Data/parsing (`data_parsing`)**: world/mod parsing and calculation tools.
-- **CLI (`cli`)**: command-line UX and config loading.
-- **All (`all`)**: installs all feature groups.
+- asynchronous command runtime abstraction,
+- seed intelligence model with "what is still missing" reporting,
+- structure-locator abstraction + nearest village query endpoint,
+- CLI commands for status and nearest-village flows.
 
-## Project Layout
+Not yet implemented (next step):
 
-```text
-.
-├── pyproject.toml
-└── src/mc_assistant/
-    ├── __init__.py
-    ├── main.py
-    ├── config.py
-    ├── adapters/      # game command adapter (minescript integration)
-    ├── voice/         # voice input/output contracts
-    ├── world/         # seed/biome/structure intelligence
-    ├── planning/      # recommendation engine contracts
-    ├── schematics/    # schematic loading boundaries
-    └── telemetry/     # telemetry and logging contracts
-```
+- concrete `minescript` adapter integration with live game transport,
+- concrete structure/biome locator using your preferred seed tool,
+- voice input/output pipeline.
 
-## Quickstart
-
-### 1) Create and activate a virtual environment
+## Install
 
 ```bash
-python3.11 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
+pip install -e .
 ```
 
-### 2) Install dependencies
-
-Install only CLI/core for baseline use:
+## CLI usage
 
 ```bash
-pip install -e ".[cli,core]"
+mc-assistant status
+mc-assistant seed-status --seedcracker-file ./seedcrackerx.log
+mc-assistant nearest-village --x 120 --z -340 --dimension overworld --seed 123456789
 ```
 
-Install the full stack:
+If nearest-village returns unknown, the output includes what needs to be configured.
 
-```bash
-pip install -e ".[all]"
-```
+## Suggested next integration targets
 
-Install development tooling:
-
-```bash
-pip install -e ".[dev]"
-```
-
-### 3) Run the assistant entrypoint
-
-```bash
-mc-assistant start
-```
-
-Alternative direct module execution:
-
-```bash
-python -m mc_assistant.main start
-```
-
-## Configuration
-
-Runtime configuration is defined in `src/mc_assistant/config.py` and can be overridden via environment variables prefixed with `MC_ASSISTANT_`.
-
-Examples:
-
-```bash
-export MC_ASSISTANT_LOG_LEVEL=DEBUG
-export MC_ASSISTANT_MINESCRIPT_SOCKET=127.0.0.1:19132
-```
-
-
-## Command Runtime
-
-`mc_assistant.command_runtime` provides a queue-backed async execution layer for game commands with:
-
-- `CommandJob` tracking (`id`, `command`, `submitted_at`, `status`, `stdout`, `error`)
-- retry and timeout handling around the game adapter
-- structured logging events for submit/start/success/failure/timeout
-- in-memory history plus optional JSONL persistence (`JsonlHistoryStore`)
-
-CLI and voice handlers both expose the same API shape:
-
-- `submit_command(command: str) -> job_id`
-- `get_job(job_id) -> CommandJob`
-- `list_recent_jobs(limit=...)`
-
-CLI commands:
-
-```bash
-mc-assistant submit-command "/say hello"
-mc-assistant get-job <job_id>
-mc-assistant list-jobs --limit 20
-```
-
-## Module Boundaries
-
-- **`mc_assistant.adapters`**: `GameCommandAdapter` contract for minescript/game command transport.
-- **`mc_assistant.voice`**: `SpeechRecognizer` and `SpeechSynthesizer` contracts for audio I/O.
-- **`mc_assistant.world`**: `WorldIntelligence` and `WorldFacts` model for seed/biome/structure logic.
-- **`mc_assistant.planning`**: `RecommendationEngine` and `Recommendation` for task planning.
-- **`mc_assistant.schematics`**: `SchematicLoader` interface for reading build schematics.
-- **`mc_assistant.telemetry`**: `Telemetry` interface for structured logging/observability.
-
-Each module currently defines interfaces and data models so implementations can be developed independently without tight coupling.
+- Seed source: SeedCrackerX exported logs/events.
+- Locator backend: any deterministic seed-based locator that can compute nearest structures/biomes by dimension.
+- Game transport: Minescript command bridge.
