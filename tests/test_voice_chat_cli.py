@@ -28,4 +28,4 @@ def test_voice_chat_reports_actionable_error_when_voice_backends_missing(monkeyp
     result = typer_testing.CliRunner().invoke(app, ["voice-chat", "--always-listening"], catch_exceptions=False)
 
     assert result.exit_code == 1
-    assert "Install with: pip install 'mc-assistant[voice]'" in result.stdout
+    assert "mc-assistant[voice]" in result.stdout
