@@ -5,49 +5,23 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mc-assistant"
 version = "0.1.0"
-description = "Foundational scaffold for a Minecraft assistant service."
+description = "Voice-capable Minecraft assistant with command automation and seed intelligence"
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [
-  { name = "MC Assistant Team" }
+dependencies = [
+  "typer>=0.12.3",
+  "pydantic>=2.8.2",
+  "pydantic-settings>=2.3.4",
+  "rich>=13.7.1",
 ]
-dependencies = []
 
 [project.optional-dependencies]
-core = [
-  "minescript>=0.3,<1.0",
-  "websockets>=12,<13"
-]
 voice = [
-  "faster-whisper>=1.0,<2.0",
-  "sounddevice>=0.4,<1.0",
-  "pyttsx3>=2.90,<3.0"
+  "SpeechRecognition>=3.10.4",
+  "pyttsx3>=2.90",
 ]
-async_runtime = [
-  "anyio>=4.4,<5.0",
-  "apscheduler>=3.10,<4.0",
-  "janus>=1.0,<2.0"
-]
-data_parsing = [
-  "nbtlib>=2.0,<3.0",
-  "anvil-parser>=0.9,<1.0",
-  "numpy>=1.26,<3.0"
-]
-cli = [
-  "pydantic>=2.7,<3.0",
-  "pydantic-settings>=2.2,<3.0",
-  "typer>=0.12,<1.0",
-  "rich>=13.7,<14.0",
-  "python-dotenv>=1.0,<2.0",
-  "structlog>=24.1,<25.0"
-]
-all = [
-  "mc-assistant[core,voice,async_runtime,data_parsing,cli]"
-]
-dev = [
-  "pytest>=8.2,<9.0",
-  "ruff>=0.5,<1.0",
-  "mypy>=1.10,<2.0"
+minescript = [
+  "minescript",
 ]
 
 [project.scripts]
@@ -58,7 +32,3 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.ruff]
-line-length = 100
-target-version = "py311"

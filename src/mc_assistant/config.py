@@ -1,22 +1,21 @@
-"""Runtime configuration for MC Assistant."""
+"""Application settings."""
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Environment-driven runtime settings."""
+    app_name: str = "MC Assistant"
+    log_level: str = "INFO"
+    minescript_socket: str = "localhost:25575"
+
+    minecraft_adapter: str = "stub"
+    locator_backend: str = "stub"
+    locator_cubiomes_bin: str | None = None
+    locator_minecraft_version: str = "1.20.1"
+
+    seedcracker_log_path: str | None = None
 
     model_config = SettingsConfigDict(env_prefix="MC_ASSISTANT_", env_file=".env", extra="ignore")
-
-    app_name: str = "mc-assistant"
-    log_level: str = "INFO"
-    minescript_socket: str = Field(
-        default="127.0.0.1:19132",
-        description="Address for minescript/game command adapter connection.",
-    )
-    voice_enabled: bool = True
-    telemetry_enabled: bool = True
 
 
 settings = Settings()
