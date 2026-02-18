@@ -2,6 +2,21 @@
 
 Baseline scaffold for a Minecraft-focused assistant with explicit boundaries for game integration, reasoning, and interaction channels.
 
+## Python Version Target
+
+- **Python 3.11+** (`requires-python = ">=3.11"` in `pyproject.toml`).
+
+## Dependency Groups
+
+Dependencies are grouped as optional extras in `pyproject.toml`:
+
+- **Core (`core`)**: minescript adapter dependencies.
+- **Voice (`voice`)**: speech-to-text and text-to-speech stack.
+- **Async/runtime (`async_runtime`)**: task scheduling and queue helpers.
+- **Data/parsing (`data_parsing`)**: world/mod parsing and calculation tools.
+- **CLI (`cli`)**: command-line UX and config loading.
+- **All (`all`)**: installs all feature groups.
+
 ## Project Layout
 
 ```text
@@ -24,20 +39,40 @@ Baseline scaffold for a Minecraft-focused assistant with explicit boundaries for
 ### 1) Create and activate a virtual environment
 
 ```bash
-python -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 ```
 
 ### 2) Install dependencies
 
+Install only CLI/core for baseline use:
+
 ```bash
-pip install -e .
+pip install -e ".[cli,core]"
+```
+
+Install the full stack:
+
+```bash
+pip install -e ".[all]"
+```
+
+Install development tooling:
+
+```bash
+pip install -e ".[dev]"
 ```
 
 ### 3) Run the assistant entrypoint
 
 ```bash
 mc-assistant start
+```
+
+Alternative direct module execution:
+
+```bash
+python -m mc_assistant.main start
 ```
 
 ## Configuration
