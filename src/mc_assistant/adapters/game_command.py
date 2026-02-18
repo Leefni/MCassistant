@@ -14,5 +14,5 @@ class MinescriptCommand:
 class GameCommandAdapter(Protocol):
     """Interface to send commands/events to Minecraft via minescript."""
 
-    def send(self, payload: MinescriptCommand) -> None:
+    def send(self, payload: MinescriptCommand) -> str | None:
         """Dispatch a command payload to the running game instance."""

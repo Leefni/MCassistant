@@ -86,6 +86,30 @@ export MC_ASSISTANT_LOG_LEVEL=DEBUG
 export MC_ASSISTANT_MINESCRIPT_SOCKET=127.0.0.1:19132
 ```
 
+
+## Command Runtime
+
+`mc_assistant.command_runtime` provides a queue-backed async execution layer for game commands with:
+
+- `CommandJob` tracking (`id`, `command`, `submitted_at`, `status`, `stdout`, `error`)
+- retry and timeout handling around the game adapter
+- structured logging events for submit/start/success/failure/timeout
+- in-memory history plus optional JSONL persistence (`JsonlHistoryStore`)
+
+CLI and voice handlers both expose the same API shape:
+
+- `submit_command(command: str) -> job_id`
+- `get_job(job_id) -> CommandJob`
+- `list_recent_jobs(limit=...)`
+
+CLI commands:
+
+```bash
+mc-assistant submit-command "/say hello"
+mc-assistant get-job <job_id>
+mc-assistant list-jobs --limit 20
+```
+
 ## Module Boundaries
 
 - **`mc_assistant.adapters`**: `GameCommandAdapter` contract for minescript/game command transport.
