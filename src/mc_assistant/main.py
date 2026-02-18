@@ -265,7 +265,13 @@ def voice_chat(
     phrase_time_limit: float = typer.Option(5.0, help="Per-utterance capture limit in seconds"),
 ) -> None:
     """Run an interactive voice loop with local STT/TTS backends."""
-    from mc_assistant.voice import VoiceActivationConfig, VoiceInputService, VoiceIntentParser, VoiceIntentRouter
+    from mc_assistant.voice import (
+        ConversationState,
+        VoiceActivationConfig,
+        VoiceInputService,
+        VoiceIntentParser,
+        VoiceIntentRouter,
+    )
     from mc_assistant.voice.input import VoiceListeningMode
     from mc_assistant.voice.output import VoiceOutputService
 
@@ -306,6 +312,7 @@ def voice_chat(
         schematic_loader=_FilesystemSchematicLoader(),
     )
     parser = VoiceIntentParser()
+    conversation_state = ConversationState()
 
     print(
         {
@@ -334,7 +341,7 @@ def voice_chat(
             break
 
         intent = parser.parse(transcript)
-        response = router.handle(intent)
+        response = router.handle(intent, utterance=transcript, conversation_state=conversation_state)
         print({"heard": transcript, "intent": intent.type.value, "response": response})
         output_service.speak(response)
 

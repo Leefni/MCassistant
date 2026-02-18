@@ -9,6 +9,12 @@ from enum import Enum
 from mc_assistant.planning import RecommendationEngine
 from mc_assistant.schematics import SchematicLoader
 from mc_assistant.voice.command_handler import VoiceCommandHandler
+from mc_assistant.voice.dialogue import (
+    INTENT_SLOT_SCHEMA,
+    ConversationState,
+    extract_slots,
+    question_for_slot,
+)
 from mc_assistant.world import WorldIntelligence
 
 
@@ -115,15 +121,67 @@ class VoiceIntentRouter:
         self._recommendation_engine = recommendation_engine
         self._schematic_loader = schematic_loader
 
-    def handle(self, intent: VoiceIntent, *, objective: str | None = None) -> str:
-        """Handle a parsed intent and return spoken response text."""
-        if intent.type == VoiceIntentType.RUN_COMMAND:
-            if not intent.argument:
-                return "I did not catch the Minecraft command to run."
-            job_id = self._command_handler.submit_command(intent.argument)
-            return f"Queued command `{intent.argument}` as job {job_id}."
+    def handle(
+        self,
+        intent: VoiceIntent,
+        *,
+        objective: str | None = None,
+        utterance: str | None = None,
+        conversation_state: ConversationState | None = None,
+    ) -> str:
+        """Handle a parsed intent and return action output or a follow-up question."""
+        state = conversation_state
+        text = utterance or intent.argument or ""
 
-        if intent.type == VoiceIntentType.LATEST_COMMAND_RESULT:
+        if state is not None:
+            if intent.type != VoiceIntentType.UNKNOWN:
+                required = INTENT_SLOT_SCHEMA.get(intent.type.value, ())
+                if required:
+                    state.begin(intent.type.value, required)
+                    if intent.argument:
+                        key = "command" if intent.type == VoiceIntentType.RUN_COMMAND else "path"
+                        state.collected_slots[key] = intent.argument
+                    state.collected_slots.update(extract_slots(intent.type.value, text))
+                else:
+                    state.clear()
+            elif state.pending_intent:
+                state.collected_slots.update(extract_slots(state.pending_intent, text))
+
+            if state.pending_intent:
+                missing = state.missing_slots()
+                if missing:
+                    question = question_for_slot(missing[0])
+                    state.last_question = question
+                    return question
+
+                pending_intent = VoiceIntentType(state.pending_intent)
+                response = self._execute(
+                    pending_intent,
+                    argument=state.collected_slots.get("command") or state.collected_slots.get("path"),
+                    objective=objective,
+                    slots=state.collected_slots,
+                )
+                state.clear()
+                return response
+
+        return self._execute(intent.type, argument=intent.argument, objective=objective, slots={})
+
+    def _execute(
+        self,
+        intent_type: VoiceIntentType,
+        *,
+        argument: str | None,
+        objective: str | None,
+        slots: dict[str, str],
+    ) -> str:
+        if intent_type == VoiceIntentType.RUN_COMMAND:
+            command_text = argument or slots.get("command")
+            if not command_text:
+                return "I did not catch the Minecraft command to run."
+            job_id = self._command_handler.submit_command(command_text)
+            return f"Queued command `{command_text}` as job {job_id}."
+
+        if intent_type == VoiceIntentType.LATEST_COMMAND_RESULT:
             jobs = self._command_handler.list_recent_jobs(limit=1)
             if not jobs:
                 return "No command results are available yet."
@@ -135,13 +193,22 @@ class VoiceIntentRouter:
                 f"Output: {latest.stdout or 'no output'}"
             )
 
-        if intent.type == VoiceIntentType.NEAREST_BIOME_OR_STRUCTURE:
+        if intent_type == VoiceIntentType.NEAREST_BIOME_OR_STRUCTURE:
             facts = self._world_intelligence.inspect()
             biome = facts.biome or "unknown biome"
             structure = facts.nearest_structure or "unknown structure"
-            return f"Nearest biome appears to be {biome}; nearest structure appears to be {structure}."
+            requested = slots.get("target")
+            context = ""
+            if requested:
+                context = (
+                    f" Requested target {requested} near x={slots.get('x')}, z={slots.get('z')} "
+                    f"in {slots.get('dimension')} using {slots.get('seed_source')}."
+                )
+            return (
+                f"Nearest biome appears to be {biome}; nearest structure appears to be {structure}.{context}"
+            )
 
-        if intent.type == VoiceIntentType.CURRENT_OBJECTIVE:
+        if intent_type == VoiceIntentType.CURRENT_OBJECTIVE:
             facts = self._world_intelligence.inspect()
             recommendations = self._recommendation_engine.suggest(facts, objective=objective)
             if not recommendations:
@@ -149,13 +216,14 @@ class VoiceIntentRouter:
             best = sorted(recommendations, key=lambda rec: rec.priority, reverse=True)[0]
             return f"Current objective: {best.title}. Next best action: {best.rationale}"
 
-        if intent.type == VoiceIntentType.LOAD_SCHEMATIC:
-            if not intent.argument:
+        if intent_type == VoiceIntentType.LOAD_SCHEMATIC:
+            schematic_path = argument or slots.get("path")
+            if not schematic_path:
                 return "Please specify a schematic path to load."
-            payload = self._schematic_loader.load(intent.argument)
+            payload = self._schematic_loader.load(schematic_path)
             block_count = payload.get("block_count")
             if block_count is None:
-                return f"Loaded schematic from {intent.argument}."
-            return f"Loaded schematic from {intent.argument} with {block_count} blocks."
+                return f"Loaded schematic from {schematic_path}."
+            return f"Loaded schematic from {schematic_path} with {block_count} blocks."
 
         return "I could not map that phrase to a known intent."
