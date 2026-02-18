@@ -11,15 +11,39 @@ requires-python = ">=3.11"
 authors = [
   { name = "MC Assistant Team" }
 ]
-dependencies = [
+dependencies = []
+
+[project.optional-dependencies]
+core = [
+  "minescript>=0.3,<1.0",
+  "websockets>=12,<13"
+]
+voice = [
+  "faster-whisper>=1.0,<2.0",
+  "sounddevice>=0.4,<1.0",
+  "pyttsx3>=2.90,<3.0"
+]
+async_runtime = [
+  "anyio>=4.4,<5.0",
+  "apscheduler>=3.10,<4.0",
+  "janus>=1.0,<2.0"
+]
+data_parsing = [
+  "nbtlib>=2.0,<3.0",
+  "anvil-parser>=0.9,<1.0",
+  "numpy>=1.26,<3.0"
+]
+cli = [
   "pydantic>=2.7,<3.0",
   "pydantic-settings>=2.2,<3.0",
   "typer>=0.12,<1.0",
   "rich>=13.7,<14.0",
+  "python-dotenv>=1.0,<2.0",
   "structlog>=24.1,<25.0"
 ]
-
-[project.optional-dependencies]
+all = [
+  "mc-assistant[core,voice,async_runtime,data_parsing,cli]"
+]
 dev = [
   "pytest>=8.2,<9.0",
   "ruff>=0.5,<1.0",
