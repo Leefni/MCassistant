@@ -15,6 +15,8 @@ class Settings(BaseSettings):
 
     seedcracker_log_path: str | None = None
 
+    seedcracker_log_path: str | None = None
+
     model_config = SettingsConfigDict(env_prefix="MC_ASSISTANT_", env_file=".env", extra="ignore")
 
 
