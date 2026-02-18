@@ -1,4 +1,4 @@
-# MC Assistant
+# MC Assistant (Base Project)
 
 Minecraft automation assistant in Python with live command execution, SeedCrackerX status parsing, and seed-based locator queries.
 
