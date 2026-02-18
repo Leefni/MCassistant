@@ -7,10 +7,6 @@ from pathlib import Path
 from typing import Protocol
 
 from .models import BiomeLocation, StructureLocation
-import math
-from typing import Protocol
-
-from .models import StructureLocation
 
 
 class WorldLocator(Protocol):
@@ -20,9 +16,6 @@ class WorldLocator(Protocol):
     def nearest_biome(self, *, seed: int, biome: str, x: int, z: int, dimension: str) -> BiomeLocation | None:
         ...
 
-
-class StubWorldLocator:
-    """Placeholder locator when no real backend is configured."""
 
 class StubWorldLocator:
     """Base placeholder until a real seed-backed structure locator is integrated."""
