@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from .command_runtime import CommandRuntime
+from .models import BiomeLocation, SeedKnowledge, StructureLocation
 from .models import SeedKnowledge, StructureLocation
 from .seed_analysis import analyze_seedcracker_file
 from .world_locator import WorldLocator
@@ -32,6 +33,32 @@ class MCAssistant:
         seed: int | None,
         seed_status: SeedKnowledge | None = None,
     ) -> tuple[StructureLocation | None, list[str]]:
+        return self.nearest_structure(
+            structure="village",
+            x=x,
+            z=z,
+            dimension=dimension,
+            seed=seed,
+            seed_status=seed_status,
+        )
+
+    def nearest_structure(
+        self,
+        *,
+        structure: str,
+        x: int,
+        z: int,
+        dimension: str,
+        seed: int | None,
+        seed_status: SeedKnowledge | None = None,
+    ) -> tuple[StructureLocation | None, list[str]]:
+        seed_missing = self._seed_missing(seed=seed, seed_status=seed_status)
+        if seed_missing:
+            return None, seed_missing
+
+        location = self.locator.nearest_structure(
+            seed=seed,
+            structure=structure,
         missing: list[str] = []
         if seed is None:
             if seed_status and seed_status.requirements_missing:
@@ -50,6 +77,42 @@ class MCAssistant:
         if location is None:
             return None, [
                 "No structure locator backend returned data",
+                "Configure a cubiomes-compatible CLI and MC_ASSISTANT_LOCATOR_CUBIOMES_BIN",
+            ]
+        return location, []
+
+    def nearest_biome(
+        self,
+        *,
+        biome: str,
+        x: int,
+        z: int,
+        dimension: str,
+        seed: int | None,
+        seed_status: SeedKnowledge | None = None,
+    ) -> tuple[BiomeLocation | None, list[str]]:
+        seed_missing = self._seed_missing(seed=seed, seed_status=seed_status)
+        if seed_missing:
+            return None, seed_missing
+
+        location = self.locator.nearest_biome(seed=seed, biome=biome, x=x, z=z, dimension=dimension)
+        if location is None:
+            return None, [
+                "No biome locator backend returned data",
+                "Configure a cubiomes-compatible CLI and MC_ASSISTANT_LOCATOR_CUBIOMES_BIN",
+            ]
+        return location, []
+
+    @staticmethod
+    def _seed_missing(*, seed: int | None, seed_status: SeedKnowledge | None) -> list[str]:
+        if seed is not None:
+            return []
+        if seed_status and seed_status.requirements_missing:
+            return seed_status.requirements_missing
+        return ["A cracked seed is required"]
+
+    @staticmethod
+    def format_location(location: StructureLocation | BiomeLocation) -> dict:
                 "Configure a real seed-based biome/structure locator implementation",
             ]
         return location, []
