@@ -4,7 +4,6 @@ from dataclasses import asdict
 
 from .command_runtime import CommandRuntime
 from .models import BiomeLocation, SeedKnowledge, StructureLocation
-from .models import SeedKnowledge, StructureLocation
 from .seed_analysis import analyze_seedcracker_file
 from .world_locator import WorldLocator
 
@@ -59,17 +58,6 @@ class MCAssistant:
         location = self.locator.nearest_structure(
             seed=seed,
             structure=structure,
-        missing: list[str] = []
-        if seed is None:
-            if seed_status and seed_status.requirements_missing:
-                missing.extend(seed_status.requirements_missing)
-            else:
-                missing.append("A cracked seed is required")
-            return None, missing
-
-        location = self.locator.nearest_structure(
-            seed=seed,
-            structure="village",
             x=x,
             z=z,
             dimension=dimension,
@@ -113,10 +101,4 @@ class MCAssistant:
 
     @staticmethod
     def format_location(location: StructureLocation | BiomeLocation) -> dict:
-                "Configure a real seed-based biome/structure locator implementation",
-            ]
-        return location, []
-
-    @staticmethod
-    def format_location(location: StructureLocation) -> dict:
         return asdict(location)
