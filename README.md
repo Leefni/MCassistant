@@ -47,6 +47,7 @@ mc-assistant submit-command "time set day"
 
 # collect basic live data from game
 mc-assistant live-snapshot
+mc-assistant session-status
 
 # seedcracker workflows
 mc-assistant seedcracker-start
@@ -65,3 +66,15 @@ If seed is unknown, `nearest-*` output includes `missing_requirements` derived f
 Command execution flows through `mc_assistant.command_runtime.CommandRuntime`, which owns the job queue, async worker, retries, and timeout handling. `CommandRuntime.submit_command()` creates a `CommandJob` in `queued` state, the worker transitions it to `running`, and then finalizes it as `succeeded`, `failed`, or `timed_out` with output/error details attached.
 
 `mc_assistant.command_runtime.CommandJob` is the canonical command job type used across CLI, voice handlers, and tests. Domain models in `mc_assistant.models` are reserved for world/seed location data.
+
+## Voice + live session behavior
+
+`mc-assistant voice-chat` now includes a first working loop for gameplay sessions:
+
+- Detects whether a Minecraft instance/world is currently accessible via live commands.
+- Tracks configured Minecraft version and exposes it in `session-status`.
+- Prompts once for permission before reading SeedCrackerX assistant data.
+- Stores cracked seed in session state when available from SeedCrackerX log.
+- For requests like "where is the nearest village", resolves nearest structures/biomes when a cracked seed is available.
+- If the seed is not cracked yet, explains why locating is blocked.
+

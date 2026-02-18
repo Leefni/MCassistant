@@ -5,22 +5,52 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
+from typing import Callable, Protocol
 
+from mc_assistant.models import SeedKnowledge
 from mc_assistant.planning import RecommendationEngine
 from mc_assistant.schematics import SchematicLoader
 from mc_assistant.voice.command_handler import VoiceCommandHandler
-from mc_assistant.voice.dialogue import (
-    INTENT_SLOT_SCHEMA,
-    ConversationState,
-    extract_slots,
-    question_for_slot,
-)
+from mc_assistant.voice.dialogue import INTENT_SLOT_SCHEMA, ConversationState, extract_slots, question_for_slot
 from mc_assistant.world import WorldIntelligence
 
 
-class VoiceIntentType(str, Enum):
-    """Supported voice intents for Minecraft helper actions."""
+class LocatorAssistant(Protocol):
+    def nearest_structure(
+        self,
+        *,
+        structure: str,
+        x: int,
+        z: int,
+        dimension: str,
+        seed: int | None,
+        seed_status: SeedKnowledge | None = None,
+    ) -> tuple[object | None, list[str]]: ...
 
+    def nearest_biome(
+        self,
+        *,
+        biome: str,
+        x: int,
+        z: int,
+        dimension: str,
+        seed: int | None,
+        seed_status: SeedKnowledge | None = None,
+    ) -> tuple[object | None, list[str]]: ...
+
+
+@dataclass(slots=True)
+class PlayerContext:
+    x: int
+    z: int
+    dimension: str = "overworld"
+
+
+class PlayerContextProvider(Protocol):
+    def current_context(self) -> PlayerContext | None: ...
+
+
+class VoiceIntentType(str, Enum):
     RUN_COMMAND = "run_minecraft_command"
     LATEST_COMMAND_RESULT = "latest_command_result"
     NEAREST_BIOME_OR_STRUCTURE = "nearest_biome_or_structure"
@@ -31,15 +61,11 @@ class VoiceIntentType(str, Enum):
 
 @dataclass(slots=True)
 class VoiceIntent:
-    """Parsed voice intent and optional argument payload."""
-
     type: VoiceIntentType
     argument: str | None = None
 
 
 class VoiceIntentParser:
-    """Maps spoken phrases to structured intent objects."""
-
     _RUN_PATTERNS = (
         re.compile(r"^(?:run|execute|do)\s+(?:minecraft\s+)?command\s+(.+)$", re.IGNORECASE),
         re.compile(r"^(?:run|execute)\s+(.+)$", re.IGNORECASE),
@@ -50,7 +76,6 @@ class VoiceIntentParser:
     )
 
     def parse(self, utterance: str) -> VoiceIntent:
-        """Parse a recognized utterance into one of the known assistant intents."""
         text = " ".join(utterance.strip().split())
         lowered = text.lower()
         if not text:
@@ -61,53 +86,34 @@ class VoiceIntentParser:
             if match:
                 return VoiceIntent(type=VoiceIntentType.RUN_COMMAND, argument=match.group(1).strip())
 
-        if any(
-            phrase in lowered
-            for phrase in (
-                "latest command result",
-                "last command result",
-                "what happened with my last command",
-                "status of last command",
-            )
-        ):
+        if any(phrase in lowered for phrase in ("latest command result", "last command result", "status of last command")):
             return VoiceIntent(type=VoiceIntentType.LATEST_COMMAND_RESULT)
 
         if any(
             phrase in lowered
             for phrase in (
-                "nearest biome",
-                "nearest structure",
-                "closest biome",
-                "closest structure",
+                "nearest",
+                "closest",
+                "where is the nearest",
             )
         ):
             return VoiceIntent(type=VoiceIntentType.NEAREST_BIOME_OR_STRUCTURE)
 
         if any(
             phrase in lowered
-            for phrase in (
-                "current objective",
-                "next best action",
-                "what should i do next",
-                "what is my objective",
-            )
+            for phrase in ("current objective", "next best action", "what should i do next", "what is my objective")
         ):
             return VoiceIntent(type=VoiceIntentType.CURRENT_OBJECTIVE)
 
         for pattern in self._LOAD_SCHEMATIC_PATTERNS:
             match = pattern.match(text)
             if match:
-                return VoiceIntent(
-                    type=VoiceIntentType.LOAD_SCHEMATIC,
-                    argument=match.group(1).strip().strip('"\''),
-                )
+                return VoiceIntent(type=VoiceIntentType.LOAD_SCHEMATIC, argument=match.group(1).strip().strip('"\''))
 
         return VoiceIntent(type=VoiceIntentType.UNKNOWN)
 
 
 class VoiceIntentRouter:
-    """Executes parsed intents against runtime, world intelligence, and planning services."""
-
     def __init__(
         self,
         *,
@@ -115,11 +121,19 @@ class VoiceIntentRouter:
         world_intelligence: WorldIntelligence,
         recommendation_engine: RecommendationEngine,
         schematic_loader: SchematicLoader,
+        locator_assistant: LocatorAssistant | None = None,
+        player_context_provider: PlayerContextProvider | None = None,
+        seed_status_provider: Callable[[], SeedKnowledge | None] | None = None,
+        seed_provider: Callable[[], int | None] | None = None,
     ) -> None:
         self._command_handler = command_handler
         self._world_intelligence = world_intelligence
         self._recommendation_engine = recommendation_engine
         self._schematic_loader = schematic_loader
+        self._locator_assistant = locator_assistant
+        self._player_context_provider = player_context_provider
+        self._seed_status_provider = seed_status_provider
+        self._seed_provider = seed_provider
 
     def handle(
         self,
@@ -129,7 +143,6 @@ class VoiceIntentRouter:
         utterance: str | None = None,
         conversation_state: ConversationState | None = None,
     ) -> str:
-        """Handle a parsed intent and return action output or a follow-up question."""
         state = conversation_state
         text = utterance or intent.argument or ""
 
@@ -164,16 +177,9 @@ class VoiceIntentRouter:
                 state.clear()
                 return response
 
-        return self._execute(intent.type, argument=intent.argument, objective=objective, slots={})
+        return self._execute(intent.type, argument=intent.argument, objective=objective, slots=extract_slots(intent.type.value, text))
 
-    def _execute(
-        self,
-        intent_type: VoiceIntentType,
-        *,
-        argument: str | None,
-        objective: str | None,
-        slots: dict[str, str],
-    ) -> str:
+    def _execute(self, intent_type: VoiceIntentType, *, argument: str | None, objective: str | None, slots: dict[str, str]) -> str:
         if intent_type == VoiceIntentType.RUN_COMMAND:
             command_text = argument or slots.get("command")
             if not command_text:
@@ -188,25 +194,10 @@ class VoiceIntentRouter:
             latest = jobs[0]
             if latest.error:
                 return f"Latest command `{latest.command}` is {latest.status.value}: {latest.error}"
-            return (
-                f"Latest command `{latest.command}` is {latest.status.value}. "
-                f"Output: {latest.stdout or 'no output'}"
-            )
+            return f"Latest command `{latest.command}` is {latest.status.value}. Output: {latest.stdout or 'no output'}"
 
         if intent_type == VoiceIntentType.NEAREST_BIOME_OR_STRUCTURE:
-            facts = self._world_intelligence.inspect()
-            biome = facts.biome or "unknown biome"
-            structure = facts.nearest_structure or "unknown structure"
-            requested = slots.get("target")
-            context = ""
-            if requested:
-                context = (
-                    f" Requested target {requested} near x={slots.get('x')}, z={slots.get('z')} "
-                    f"in {slots.get('dimension')} using {slots.get('seed_source')}."
-                )
-            return (
-                f"Nearest biome appears to be {biome}; nearest structure appears to be {structure}.{context}"
-            )
+            return self._handle_locator_intent(slots)
 
         if intent_type == VoiceIntentType.CURRENT_OBJECTIVE:
             facts = self._world_intelligence.inspect()
@@ -227,3 +218,50 @@ class VoiceIntentRouter:
             return f"Loaded schematic from {schematic_path} with {block_count} blocks."
 
         return "I could not map that phrase to a known intent."
+
+    def _handle_locator_intent(self, slots: dict[str, str]) -> str:
+        if not self._locator_assistant:
+            facts = self._world_intelligence.inspect()
+            return (
+                f"Nearest biome appears to be {facts.biome or 'unknown biome'}; "
+                f"nearest structure appears to be {facts.nearest_structure or 'unknown structure'}."
+            )
+
+        target = slots.get("target")
+        if not target or ":" not in target:
+            return "Tell me what to locate, like 'nearest village' or 'nearest biome cherry_grove'."
+
+        context = self._player_context_provider.current_context() if self._player_context_provider else None
+        if not context:
+            return "I can’t read your current position yet, so I can’t locate the nearest target."
+
+        seed_status = self._seed_status_provider() if self._seed_status_provider else None
+        seed = self._seed_provider() if self._seed_provider else None
+        target_kind, target_name = target.split(":", 1)
+        if target_name == "unknown":
+            return "Please name the biome or structure you want me to locate."
+
+        if target_kind == "structure":
+            location, missing = self._locator_assistant.nearest_structure(
+                structure=target_name,
+                x=context.x,
+                z=context.z,
+                dimension=context.dimension,
+                seed=seed,
+                seed_status=seed_status,
+            )
+            if location is None:
+                return f"I can’t locate the nearest {target_name} yet: {'; '.join(missing)}"
+            return f"Nearest {target_name} is at x={location.x}, z={location.z} in {location.dimension}."
+
+        location, missing = self._locator_assistant.nearest_biome(
+            biome=target_name,
+            x=context.x,
+            z=context.z,
+            dimension=context.dimension,
+            seed=seed,
+            seed_status=seed_status,
+        )
+        if location is None:
+            return f"I can’t locate the nearest biome {target_name} yet: {'; '.join(missing)}"
+        return f"Nearest biome {target_name} is at x={location.x}, z={location.z} in {location.dimension}."

@@ -7,24 +7,14 @@ from dataclasses import dataclass, field
 
 INTENT_SLOT_SCHEMA: dict[str, tuple[str, ...]] = {
     "run_minecraft_command": ("command",),
-    "nearest_biome_or_structure": (
-        "target",
-        "x",
-        "z",
-        "dimension",
-        "seed_source",
-    ),
+    "nearest_biome_or_structure": ("target",),
     "load_schematic": ("path",),
 }
 
 
 _SLOT_QUESTIONS: dict[str, str] = {
     "command": "What Minecraft command should I run?",
-    "target": "Do you want the nearest biome or structure, and what name should I search for?",
-    "x": "I need your current X coordinate. What is it?",
-    "z": "I also need your current Z coordinate. What is it?",
-    "dimension": "Which dimension are you in: overworld, nether, or end?",
-    "seed_source": "Please provide the world seed, or tell me to use your cracked/current seed.",
+    "target": "What should I locate? For example: nearest village or nearest biome cherry_grove.",
     "path": "What schematic file path should I load?",
 }
 
@@ -57,10 +47,21 @@ class ConversationState:
         self.last_question = None
 
 
-_COORD_X = re.compile(r"\bx\s*(?:=|is)?\s*(-?\d+)\b", re.IGNORECASE)
-_COORD_Z = re.compile(r"\bz\s*(?:=|is)?\s*(-?\d+)\b", re.IGNORECASE)
-_COORD_PAIR = re.compile(r"(?:coords?|position)\s*(?:are|is|:)?\s*(-?\d+)\s*[ ,]+\s*(-?\d+)", re.IGNORECASE)
-_SEED_NUMERIC = re.compile(r"\bseed\s*(?:=|is)?\s*(-?\d+)\b", re.IGNORECASE)
+_STRUCTURE_HINTS = {
+    "village",
+    "stronghold",
+    "temple",
+    "desert_temple",
+    "jungle_temple",
+    "shipwreck",
+    "ocean_monument",
+    "trial_chambers",
+    "ancient_city",
+    "fortress",
+    "bastion_remnant",
+    "outpost",
+    "mansion",
+}
 
 
 def question_for_slot(slot: str) -> str:
@@ -70,7 +71,6 @@ def question_for_slot(slot: str) -> str:
 def extract_slots(intent_type: str, text: str) -> dict[str, str]:
     """Extract slot values from free-form utterances using lightweight regex rules."""
     normalized = " ".join(text.strip().split())
-    lowered = normalized.lower()
     slots: dict[str, str] = {}
 
     if intent_type == "run_minecraft_command":
@@ -88,42 +88,32 @@ def extract_slots(intent_type: str, text: str) -> dict[str, str]:
         if target:
             slots["target"] = target
 
-        x_match = _COORD_X.search(normalized)
-        z_match = _COORD_Z.search(normalized)
-        if x_match:
-            slots["x"] = x_match.group(1)
-        if z_match:
-            slots["z"] = z_match.group(1)
-
-        pair_match = _COORD_PAIR.search(normalized)
-        if pair_match:
-            slots.setdefault("x", pair_match.group(1))
-            slots.setdefault("z", pair_match.group(2))
-
-        for dimension in ("overworld", "nether", "end"):
-            if dimension in lowered:
-                slots["dimension"] = dimension
-                break
-
-        seed_match = _SEED_NUMERIC.search(normalized)
-        if seed_match:
-            slots["seed_source"] = seed_match.group(1)
-        elif "cracked seed" in lowered:
-            slots["seed_source"] = "cracked seed"
-        elif "current seed" in lowered or "my seed" in lowered:
-            slots["seed_source"] = "current seed"
-
     return slots
 
 
 def _extract_target(text: str) -> str | None:
-    target_match = re.search(r"(?:nearest|closest)\s+(biome|structure)\s+([a-zA-Z0-9_:-]+)", text, re.IGNORECASE)
-    if target_match:
-        return f"{target_match.group(1).lower()}:{target_match.group(2)}"
+    lowered = text.lower()
+    explicit = re.search(r"(?:nearest|closest)\s+(biome|structure)\s+([a-zA-Z0-9_:-]+)", text, re.IGNORECASE)
+    if explicit:
+        return f"{explicit.group(1).lower()}:{explicit.group(2).lower()}"
 
-    if "biome" in text.lower():
+    biome_match = re.search(r"(?:nearest|closest|where(?:\s+is)?\s+the\s+nearest)\s+biome\s+([a-zA-Z0-9_:-]+)", text, re.IGNORECASE)
+    if biome_match:
+        return f"biome:{biome_match.group(1).lower()}"
+
+    for structure in sorted(_STRUCTURE_HINTS, key=len, reverse=True):
+        if structure.replace("_", " ") in lowered or structure in lowered:
+            return f"structure:{structure}"
+
+    structure_match = re.search(r"(?:nearest|closest|where(?:\s+is)?\s+the\s+nearest)\s+([a-zA-Z0-9_:-]+)", text, re.IGNORECASE)
+    if structure_match:
+        candidate = structure_match.group(1).lower()
+        if candidate not in {"biome", "structure"}:
+            return f"structure:{candidate}"
+
+    if "biome" in lowered:
         return "biome:unknown"
-    if "structure" in text.lower():
+    if "structure" in lowered:
         return "structure:unknown"
     return None
 

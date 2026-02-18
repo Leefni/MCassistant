@@ -19,6 +19,10 @@ from mc_assistant.world_locator import CubiomesCliLocator, DemoVillageLocator, S
 from mc_assistant.adapters.game_command import MinescriptCommand
 from mc_assistant.planning import Recommendation
 from mc_assistant.world import WorldFacts
+from mc_assistant.session import SessionCoordinator
+from mc_assistant.models import SeedKnowledge
+from mc_assistant.voice.intents import PlayerContext
+import re
 from datetime import datetime, timezone
 
 app = typer.Typer(help="MC Assistant service entrypoint")
@@ -32,11 +36,47 @@ class _SnapshotWorldIntelligence:
 
     def inspect(self) -> WorldFacts:
         snapshot = self._collector.snapshot()
+        biome = None
+        if snapshot.biome_raw:
+            biome = snapshot.biome_raw.split()[-1]
         return WorldFacts(
-            seed=snapshot.seed,
-            biome=snapshot.biome,
-            nearest_structure=snapshot.nearest_structure,
+            seed=None,
+            biome=biome,
+            nearest_structure=None,
         )
+
+
+class _LivePlayerContextProvider:
+    _COORD_RE = re.compile(r"(-?\d+(?:\.\d+)?)")
+
+    def __init__(self, collector: GameStateCollector) -> None:
+        self._collector = collector
+
+    def current_context(self) -> PlayerContext | None:
+        snapshot = self._collector.snapshot()
+        if not snapshot.position_raw:
+            return None
+
+        values = self._COORD_RE.findall(snapshot.position_raw)
+        if len(values) < 2:
+            return None
+
+        return PlayerContext(x=int(float(values[0])), z=int(float(values[2] if len(values) > 2 else values[1])), dimension="overworld")
+
+
+def _session_seed_status(session: SessionCoordinator) -> SeedKnowledge:
+    state = session.refresh()
+    return SeedKnowledge(
+        seed=state.cracked_seed,
+        confidence=1.0 if state.cracked_seed is not None else 0.0,
+        source="session",
+        requirements_missing=state.seed_requirements_missing,
+    )
+
+
+def _prompt_permission() -> bool:
+    answer = input("Allow MC Assistant to read SeedCrackerX/session data? [y/N]: ").strip().lower()
+    return answer in {"y", "yes"}
 
 
 class _BasicRecommendationEngine:
@@ -186,6 +226,27 @@ def live_snapshot() -> None:
     print(collector.snapshot())
 
 
+@app.command("session-status")
+def session_status() -> None:
+    adapter = _build_game_adapter()
+    session = SessionCoordinator(
+        adapter=adapter,
+        seedcracker_log_path=settings.seedcracker_log_path,
+        configured_version=settings.locator_minecraft_version,
+    )
+    state = session.refresh()
+    print(
+        {
+            "instance_running": state.instance_running,
+            "minecraft_version": state.minecraft_version,
+            "world_loaded": state.world_loaded,
+            "permission_granted": state.data_permission_granted,
+            "cracked_seed": state.cracked_seed,
+            "missing_requirements": state.seed_requirements_missing,
+        }
+    )
+
+
 @app.command("nearest-structure")
 def nearest_structure(
     structure: str = typer.Option(..., help="Structure type, e.g. village"),
@@ -304,12 +365,25 @@ def voice_chat(
     )
     output_service = VoiceOutputService(synthesizer=tts, output_device=output)
 
-    collector = GameStateCollector(_build_game_adapter())
+    game_adapter = _build_game_adapter()
+    collector = GameStateCollector(game_adapter)
+    assistant, _ = _build_assistant()
+    session = SessionCoordinator(
+        adapter=game_adapter,
+        seedcracker_log_path=settings.seedcracker_log_path,
+        configured_version=settings.locator_minecraft_version,
+    )
+    context_provider = _LivePlayerContextProvider(collector)
+
     router = VoiceIntentRouter(
-        command_handler=_SyncVoiceCommandHandler(_build_game_adapter()),
+        command_handler=_SyncVoiceCommandHandler(game_adapter),
         world_intelligence=_SnapshotWorldIntelligence(collector),
         recommendation_engine=_BasicRecommendationEngine(),
         schematic_loader=_FilesystemSchematicLoader(),
+        locator_assistant=assistant,
+        player_context_provider=context_provider,
+        seed_status_provider=lambda: _session_seed_status(session),
+        seed_provider=lambda: session.state.cracked_seed,
     )
     parser = VoiceIntentParser()
     conversation_state = ConversationState()
@@ -324,7 +398,21 @@ def voice_chat(
         }
     )
 
+    permission_prompted = False
+
     while True:
+        live_state = session.refresh()
+        if live_state.world_loaded and not permission_prompted:
+            permission_prompted = True
+            if _prompt_permission():
+                session.grant_permission()
+                output_service.speak("Permission granted. I will monitor SeedCrackerX progress.")
+                if session.state.cracked_seed is None:
+                    output_service.speak("Seed is not cracked yet. I will keep checking.")
+            else:
+                session.deny_permission()
+                output_service.speak("Understood. I will not read assistant data this session.")
+
         if not always_listening:
             input("Press Enter to capture voice (Ctrl+C to quit) ...")
 
