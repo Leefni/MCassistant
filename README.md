@@ -59,3 +59,9 @@ mc-assistant nearest-biome --biome cherry_grove --x 120 --z -340 --dimension ove
 ```
 
 If seed is unknown, `nearest-*` output includes `missing_requirements` derived from SeedCrackerX logs.
+
+## Command runtime architecture
+
+Command execution flows through `mc_assistant.command_runtime.CommandRuntime`, which owns the job queue, async worker, retries, and timeout handling. `CommandRuntime.submit_command()` creates a `CommandJob` in `queued` state, the worker transitions it to `running`, and then finalizes it as `succeeded`, `failed`, or `timed_out` with output/error details attached.
+
+`mc_assistant.command_runtime.CommandJob` is the canonical command job type used across CLI, voice handlers, and tests. Domain models in `mc_assistant.models` are reserved for world/seed location data.
